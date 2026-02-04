@@ -1,10 +1,12 @@
-import streamlit as st
-import google.generativeai as genai
-from streamlit_gsheets import GSheetsConnection
-import pandas as pd
-
 # --- НАСТРОЙКИ ---
-API_KEY = st.secrets.get("GOOGLE_API_KEY", "ВАШ_КЛЮЧ")
+if "GOOGLE_API_KEY" in st.secrets:
+    API_KEY = st.secrets["GOOGLE_API_KEY"]
+else:
+    API_KEY = "AIzaSy..." # Ваш ключ
+
+# ВОТ ЭТОЙ СТРОЧКИ У ВАС СЕЙЧАС НЕ ХВАТАЕТ:
+TEACHER_PASSWORD = "admin" 
+
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -66,4 +68,5 @@ elif role == "Учитель":
                 st.warning("Файл с ответами пуст или не введен эталон!")
     elif password != "":
         st.error("Неверный пароль!")
+
 
