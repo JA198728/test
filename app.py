@@ -4,8 +4,13 @@ import pandas as pd
 import os
 
 # --- НАСТРОЙКИ ---
-API_KEY = "AIzaSyBm67o0GkwhDlBuqkZ9tfLpTnotvvG8HoI"
-TEACHER_PASSWORD = "admin" # Смените на свой пароль
+# Пробуем достать ключ из секретов облака
+if "GOOGLE_API_KEY" in st.secrets:
+    API_KEY = st.secrets["GOOGLE_API_KEY"]
+else:
+    API_KEY = "AIzaSyBm67o0GkwhDlBuqkZ9tfLpTnotvvG8HoI"
+
+TEACHER_PASSWORD = "admin" 
 
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
@@ -13,6 +18,8 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 # --- ГЛАВНОЕ МЕНЮ ---
 st.sidebar.title("Навигация")
 role = st.sidebar.radio("Кто вы?", ["Ученик", "Учитель"])
+
+# Остальной ваш код ниже...
 
 # --- РЕЖИМ УЧЕНИКА ---
 if role == "Ученик":
@@ -69,4 +76,5 @@ elif role == "Учитель":
             else:
                 st.warning("Файл с ответами пуст или не введен эталон!")
     elif password != "":
+
         st.error("Неверный пароль!")
