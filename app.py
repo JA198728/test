@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 # --- НАСТРОЙКИ ---
-# Пробуем достать ключ из секретов облака
+# Приоритет ключу из "Secrets", если его нет - берем ваш текстовый ключ
 if "GOOGLE_API_KEY" in st.secrets:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
@@ -19,8 +19,6 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 st.sidebar.title("Навигация")
 role = st.sidebar.radio("Кто вы?", ["Ученик", "Учитель"])
 
-# Остальной ваш код ниже...
-
 # --- РЕЖИМ УЧЕНИКА ---
 if role == "Ученик":
     st.title("📝 Тестирование")
@@ -34,16 +32,20 @@ if role == "Ученик":
         
         if submitted:
             if fio and answers:
-                # Сохраняем в файл Excel (spisok.xlsx)
                 new_data = pd.DataFrame({"ФИО": [fio], "Ответы": [answers]})
                 
-                if os.path.exists("spisok.xlsx"):
-                    df = pd.read_excel("spisok.xlsx")
-                    df = pd.concat([df, new_data], ignore_index=True)
+                # Работа с файлом в облаке
+                file_path = "spisok.xlsx"
+                if os.path.exists(file_path):
+                    try:
+                        df = pd.read_excel(file_path)
+                        df = pd.concat([df, new_data], ignore_index=True)
+                    except:
+                        df = new_data
                 else:
                     df = new_data
                 
-                df.to_excel("spisok.xlsx", index=False)
+                df.to_excel(file_path, index=False)
                 st.success(f"Спасибо, {fio}! Ваши ответы успешно сохранены.")
             else:
                 st.warning("Заполните все поля!")
@@ -76,5 +78,4 @@ elif role == "Учитель":
             else:
                 st.warning("Файл с ответами пуст или не введен эталон!")
     elif password != "":
-
         st.error("Неверный пароль!")
