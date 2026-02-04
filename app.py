@@ -1,54 +1,41 @@
 import streamlit as st
 import google.generativeai as genai
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import os
 
 # --- НАСТРОЙКИ ---
-# Приоритет ключу из "Secrets", если его нет - берем ваш текстовый ключ
-if "GOOGLE_API_KEY" in st.secrets:
-    API_KEY = st.secrets["GOOGLE_API_KEY"]
-else:
-    API_KEY = "AIzaSyBm67o0GkwhDlBuqkZ9tfLpTnotvvG8HoI"
-
-TEACHER_PASSWORD = "admin" 
-
+API_KEY = st.secrets.get("GOOGLE_API_KEY", "ВАШ_КЛЮЧ")
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- ГЛАВНОЕ МЕНЮ ---
+# Подключение к Google Таблице
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# --- РЕЖИМ УЧЕНИКА ---
 st.sidebar.title("Навигация")
 role = st.sidebar.radio("Кто вы?", ["Ученик", "Учитель"])
 
-# --- РЕЖИМ УЧЕНИКА ---
 if role == "Ученик":
     st.title("📝 Тестирование")
-    st.info("Пожалуйста, заполните форму ниже. Ваши ответы будут переданы учителю.")
-    
     with st.form("student_form"):
-        fio = st.text_input("Ваше ФИО (полностью)")
-        answers = st.text_area("Введите ваши ответы (например: 1-а, 2-б, 3-в)")
-        
-        submitted = st.form_submit_button("✅ Отправить ответы")
+        fio = st.text_input("Ваше ФИО")
+        answers = st.text_area("Ваши ответы")
+        submitted = st.form_submit_button("✅ Отправить")
         
         if submitted:
             if fio and answers:
-                new_data = pd.DataFrame({"ФИО": [fio], "Ответы": [answers]})
+                # Читаем текущие данные из таблицы
+                existing_data = conn.read(worksheet="Sheet1")
+                new_row = pd.DataFrame([{"ФИО": fio, "Ответы": answers}])
+                updated_df = pd.concat([existing_data, new_row], ignore_index=True)
                 
-                # Работа с файлом в облаке
-                file_path = "spisok.xlsx"
-                if os.path.exists(file_path):
-                    try:
-                        df = pd.read_excel(file_path)
-                        df = pd.concat([df, new_data], ignore_index=True)
-                    except:
-                        df = new_data
-                else:
-                    df = new_data
-                
-                df.to_excel(file_path, index=False)
-                st.success(f"Спасибо, {fio}! Ваши ответы успешно сохранены.")
+                # Обновляем таблицу в Google
+                conn.update(worksheet="Sheet1", data=updated_df)
+                st.success("Данные сохранены в Google Таблицу!")
             else:
-                st.warning("Заполните все поля!")
+                st.warning("Заполните поля!")
+
+# Режим учителя остается таким же, но данные он будет брать из conn.read()
 
 # --- РЕЖИМ УЧИТЕЛЯ ---
 elif role == "Учитель":
@@ -79,3 +66,4 @@ elif role == "Учитель":
                 st.warning("Файл с ответами пуст или не введен эталон!")
     elif password != "":
         st.error("Неверный пароль!")
+
