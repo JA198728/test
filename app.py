@@ -27,16 +27,25 @@ if role == "Ученик":
         
         if submitted:
             if fio and answers:
-                # Читаем текущие данные из таблицы
-                existing_data = conn.read(worksheet="Sheet1")
+                try:
+                    # Читаем текущие данные (ttl=0 значит не использовать кэш, читать сразу)
+                    existing_data = conn.read(worksheet="Sheet1", ttl=0)
+                except Exception:
+                    # Если таблица пустая или ошибка чтения — создаем пустой список
+                    existing_data = pd.DataFrame(columns=["ФИО", "Ответы"])
+                
+                # Создаем новую строчку
                 new_row = pd.DataFrame([{"ФИО": fio, "Ответы": answers}])
+                
+                # Соединяем старое с новым
                 updated_df = pd.concat([existing_data, new_row], ignore_index=True)
                 
-                # Обновляем таблицу в Google
+                # Отправляем обратно в Google
                 conn.update(worksheet="Sheet1", data=updated_df)
-                st.success("Данные сохранены в Google Таблицу!")
+                st.success(f"Спасибо, {fio}! Ваши ответы записаны.")
+                st.balloons() # Немного праздника при успешной отправке!
             else:
-                st.warning("Заполните поля!")
+                st.warning("Пожалуйста, заполните все поля!")
 
 # Режим учителя остается таким же, но данные он будет брать из conn.read()
 
@@ -69,6 +78,7 @@ elif role == "Учитель":
                 st.warning("Файл с ответами пуст или не введен эталон!")
     elif password != "":
         st.error("Неверный пароль!")
+
 
 
 
