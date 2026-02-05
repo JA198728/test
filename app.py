@@ -1,87 +1,98 @@
-import streamlit as st  # ПРОВЕРЬТЕ ЭТУ СТРОКУ!
+import streamlit as st
 import google.generativeai as genai
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import os
 
 # --- НАСТРОЙКИ ---
+# Берем ключ из Secrets (настройки в Streamlit Cloud)
 if "GOOGLE_API_KEY" in st.secrets:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
-    API_KEY = "AIzaSy..." # Ваш ключ
+    API_KEY = "ВАШ_КЛЮЧ_ТУТ" # Резервный вариант
 
-TEACHER_PASSWORD = "admin"
+TEACHER_PASSWORD = "admin" # Пароль для входа учителя
 
-# Подключение к Google Таблице
-conn = st.connection("gsheets", type=GSheetsConnection)
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- РЕЖИМ УЧЕНИКА ---
+# Путь к файлу с данными
+DATA_FILE = "results.csv"
+
+# --- ГЛАВНОЕ МЕНЮ ---
 st.sidebar.title("Навигация")
 role = st.sidebar.radio("Кто вы?", ["Ученик", "Учитель"])
 
+# --- РЕЖИМ УЧЕНИКА ---
 if role == "Ученик":
     st.title("📝 Тестирование")
-    with st.form("student_form"):
-        fio = st.text_input("Ваше ФИО")
-        answers = st.text_area("Ваши ответы")
-        submitted = st.form_submit_button("✅ Отправить")
+    st.info("Введите ваше имя и ответы. Учитель получит их автоматически.")
+    
+    with st.form("student_form", clear_on_submit=True):
+        fio = st.text_input("Ваше ФИО (полностью)")
+        answers = st.text_area("Введите ваши ответы (например: 1-а, 2-б, 3-в)")
+        submitted = st.form_submit_button("✅ Отправить ответы")
         
         if submitted:
             if fio and answers:
-                file_path = "results.csv" # Используем простой CSV формат
-                new_data = pd.DataFrame([{"ФИО": fio, "Ответы": answers}])
+                new_row = pd.DataFrame([{"ФИО": fio, "Ответы": answers}])
                 
-                # Если файл уже есть - добавляем строку, если нет - создаем новый
-                if os.path.exists(file_path):
-                    df = pd.read_csv(file_path)
-                    df = pd.concat([df, new_data], ignore_index=True)
+                # Сохраняем данные локально в CSV
+                if os.path.exists(DATA_FILE):
+                    df = pd.read_csv(DATA_FILE)
+                    df = pd.concat([df, new_row], ignore_index=True)
                 else:
-                    df = new_data
+                    df = new_row
                 
-                # Сохраняем локально
-                df.to_csv(file_path, index=False)
-                st.success(f"Спасибо, {fio}! Ответы приняты.")
-                
-                # КНОПКА ДЛЯ УЧИТЕЛЯ (чтобы скачать результаты, если они понадобятся)
-                st.download_button(
-                    label="📥 Скачать файл с ответами (для учителя)",
-                    data=df.to_csv(index=False).encode('utf-8'),
-                    file_name="student_results.csv",
-                    mime="text/csv",
-                )
+                df.to_csv(DATA_FILE, index=False)
+                st.success(f"Спасибо, {fio}! Ваши ответы успешно отправлены.")
+                st.balloons()
             else:
-                st.warning("Заполните поля!")
-
-# Режим учителя остается таким же, но данные он будет брать из conn.read()
+                st.warning("Пожалуйста, заполните все поля!")
 
 # --- РЕЖИМ УЧИТЕЛЯ ---
 elif role == "Учитель":
     st.title("🔐 Панель учителя")
     
-    password = st.text_input("Введите пароль для доступа к проверке", type="password")
+    password = st.text_input("Введите пароль для доступа", type="password")
     
     if password == TEACHER_PASSWORD:
         st.success("Доступ разрешен!")
         
-        etalon = st.text_area("Введите эталон правильных ответов")
-        
-        if st.button("🚀 Начать проверку ИИ"):
-            if os.path.exists("spisok.xlsx") and etalon:
-                try:
-                    df = pd.read_excel("spisok.xlsx")
-                    student_data = df.to_string(index=False)
-                    
-                    prompt = f"Эталон: {etalon}\nДанные учеников:\n{student_data}\nПроверь и выведи таблицу с оценками."
-                    
-                    response = model.generate_content(prompt)
-                    st.markdown("### Результаты анализа:")
-                    st.write(response.text)
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"Ошибка: {e}")
-            else:
-                st.warning("Файл с ответами пуст или не введен эталон!")
+        # Блок просмотра данных
+        if os.path.exists(DATA_FILE):
+            df_view = pd.read_csv(DATA_FILE)
+            st.write("### Список ответов учеников:")
+            st.dataframe(df_view) # Показывает таблицу прямо на экране
+            
+            # Кнопка скачивания для Excel
+            st.download_button(
+                label="📥 Скачать таблицу ответов (CSV)",
+                data=df_view.to_csv(index=False).encode('utf-8-sig'),
+                file_name="answers.csv",
+                mime="text/csv",
+            )
+            
+            st.divider()
+            
+            # Блок проверки ИИ
+            etalon = st.text_area("Введите эталон правильных ответов (для ИИ)")
+            if st.button("🚀 Начать проверку через ИИ"):
+                if etalon:
+                    with st.spinner('ИИ анализирует ответы...'):
+                        student_data_text = df_view.to_string(index=False)
+                        prompt = f"Эталон: {etalon}\nДанные учеников:\n{student_data_text}\nПроверь каждого ученика и выведи таблицу с оценками и коротким пояснением ошибок."
+                        
+                        response = model.generate_content(prompt)
+                        st.markdown("### Результаты проверки:")
+                        st.write(response.text)
+                else:
+                    st.warning("Введите эталон для проверки!")
+        else:
+            st.info("Пока никто из учеников не прислал ответы.")
+            
     elif password != "":
         st.error("Неверный пароль!")
+
 
 
 
