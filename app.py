@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 # --- 1. НАСТРОЙКИ ---
-st.set_page_config(page_title="МОДО 2024: Полный Тест", layout="centered")
+st.set_page_config(page_title="МОДО", layout="centered")
 
 API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
 TEACHER_PASSWORD = "admin" 
@@ -105,3 +105,4 @@ elif role == "Учитель":
                         st.error(f"Ошибка: {e}")
         else:
             st.info("Данных пока нет.")
+
