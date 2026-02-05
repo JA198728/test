@@ -3,119 +3,111 @@ import google.generativeai as genai
 import pandas as pd
 import os
 
-# --- 1. НАСТРОЙКИ (КЛЮЧИ И ПАРОЛИ) ---
-# Пробуем взять ключ из Secrets, если нет - используем пустую строку (нужно вставить свой в Secrets)
-API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
-TEACHER_PASSWORD = "admin" # Пароль для входа учителя
-DATA_FILE = "results.csv"  # Файл, где хранятся ответы
-
-# Настройка нейросети
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-    # Используем самую стабильную версию модели
-    model = genai.GenerativeModel('models/gemini-1.0-pro')
-else:
-    st.error("Ошибка: API ключ не найден в Secrets!")
-
-# --- 2. ИНТЕРФЕЙС ---
+# --- 1. НАСТРОЙКИ ---
 st.set_page_config(page_title="Проверка Тестов", layout="centered")
 
-st.sidebar.title("Меню")
+# Берем ключ из Secrets
+API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
+TEACHER_PASSWORD = "admin" 
+DATA_FILE = "results.csv"
+
+if not API_KEY:
+    st.error("Критическая ошибка: GOOGLE_API_KEY не найден в Secrets!")
+    st.stop()
+
+# Настройка Google AI с автоматическим выбором модели
+genai.configure(api_key=API_KEY)
+
+@st.cache_resource
+def get_model():
+    """Функция для поиска доступной модели, чтобы избежать ошибки 404"""
+    try:
+        # Пытаемся найти самую современную модель
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Приоритет выбора:
+        for model_name in ['models/gemini-1.5-flash', 'models/gemini-pro', 'models/gemini-1.5-flash-latest']:
+            if model_name in available_models:
+                return genai.GenerativeModel(model_name)
+        # Если ничего из списка не нашли, берем первую доступную
+        return genai.GenerativeModel(available_models[0])
+    except Exception as e:
+        st.error(f"Не удалось инициализировать модель: {e}")
+        return None
+
+model = get_model()
+
+# --- 2. ИНТЕРФЕЙС ---
+st.sidebar.title("Навигация")
 role = st.sidebar.radio("Выберите роль:", ["Ученик", "Учитель"])
 
 # --- 3. РЕЖИМ УЧЕНИКА ---
 if role == "Ученик":
-    st.title("📝 Тестирование")
-    st.write("Пожалуйста, введите ваше имя и ответы на вопросы теста.")
+    st.title("📝 Сдача теста")
     
-    # Форма отправки
     with st.form("student_form", clear_on_submit=True):
         fio = st.text_input("Ваше ФИО")
-        answers = st.text_area("Ваши ответы (например: 1-а, 2-б, 3-в...)", height=150)
-        submitted = st.form_submit_button("Отправить ответы")
+        answers = st.text_area("Ваши ответы (например: 1-а, 2-б...)", height=150)
+        submitted = st.form_submit_button("Отправить")
         
         if submitted:
             if fio and answers:
-                # Создаем новую строку данных
                 new_row = pd.DataFrame([{"ФИО": fio, "Ответы": answers}])
-                
-                # Сохраняем в CSV файл
                 if os.path.exists(DATA_FILE):
                     df = pd.read_csv(DATA_FILE)
                     df = pd.concat([df, new_row], ignore_index=True)
                 else:
                     df = new_row
-                
                 df.to_csv(DATA_FILE, index=False)
                 st.success(f"Ответы для {fio} успешно сохранены!")
                 st.balloons()
             else:
-                st.warning("Пожалуйста, заполните все поля!")
+                st.warning("Заполните все поля!")
 
 # --- 4. РЕЖИМ УЧИТЕЛЯ ---
 elif role == "Учитель":
-    st.title("🔐 Панель управления")
-    
+    st.title("🔐 Панель учителя")
     password = st.text_input("Введите пароль", type="password")
     
     if password == TEACHER_PASSWORD:
-        st.success("Доступ открыт")
-        
-        # Проверяем, есть ли уже ответы
         if os.path.exists(DATA_FILE):
             df_view = pd.read_csv(DATA_FILE)
-            st.write("### Таблица ответов учеников:")
+            st.write("### Ответы учеников:")
             st.dataframe(df_view)
             
-            # Кнопка скачивания таблицы
-            csv_data = df_view.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 Скачать таблицу (Excel/CSV)",
-                data=csv_data,
-                file_name="results.csv",
-                mime="text/csv"
-            )
-            
             st.divider()
+            st.write("### 🤖 Проверка ИИ")
+            etalon = st.text_area("Введите правильные ответы (эталон)")
             
-            # БЛОК ПРОВЕРКИ ИИ
-            st.write("### 🤖 Автоматическая проверка ИИ")
-            etalon = st.text_area("Вставьте эталон (правильные ответы)", placeholder="Например: 1-а, 2-б, 3-в...")
-            
-            if st.button("🚀 Запустить проверку ИИ"):
-                if etalon:
-                    with st.spinner('Gemini анализирует ответы...'):
+            if st.button("🚀 Запустить проверку"):
+                if etalon and model:
+                    with st.spinner('ИИ проверяет работы...'):
                         try:
-                            # Собираем данные учеников в текст для ИИ
+                            # Формируем список ответов для ИИ
                             student_responses = ""
-                            for i, row in df_view.iterrows():
+                            for _, row in df_view.iterrows():
                                 student_responses += f"Ученик: {row['ФИО']}\nОтветы: {row['Ответы']}\n\n"
                             
                             prompt = f"""
-                            Ты — строгий, но справедливый учитель. Сравни ответы учеников с эталоном.
-                            ЭТАЛОН:
-                            {etalon}
+                            Проверь ответы учеников по эталону. 
+                            ЭТАЛОН: {etalon}
+                            ОТВЕТЫ: {student_responses}
                             
-                            ОТВЕТЫ УЧЕНИКОВ:
-                            {student_responses}
-                            
-                            Выведи результат в виде Markdown-таблицы:
-                            | ФИО | Оценка | Комментарий |
-                            Засчитывай ответ как правильный, если смысл совпадает, даже если есть опечатки.
+                            Выдай таблицу Markdown: ФИО | Оценка | Ошибки.
+                            Будь лоялен к опечаткам.
                             """
                             
                             response = model.generate_content(prompt)
                             st.markdown(response.text)
                         except Exception as e:
-                            st.error(f"Произошла ошибка при работе с ИИ: {e}")
+                            st.error(f"Ошибка ИИ: {e}")
+                elif not model:
+                    st.error("Модель ИИ не инициализирована.")
                 else:
-                    st.warning("Введите правильные ответы для сравнения!")
+                    st.warning("Введите эталон!")
         else:
-            st.info("Пока никто не сдал тест.")
-            
+            st.info("Ответов пока нет.")
     elif password != "":
         st.error("Неверный пароль")
-
 
 
 
