@@ -13,7 +13,7 @@ DATA_FILE = "results.csv"  # Файл, где хранятся ответы
 if API_KEY:
     genai.configure(api_key=API_KEY)
     # Используем самую стабильную версию модели
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('models/gemini-1.0-pro')
 else:
     st.error("Ошибка: API ключ не найден в Secrets!")
 
@@ -115,6 +115,7 @@ elif role == "Учитель":
             
     elif password != "":
         st.error("Неверный пароль")
+
 
 
 
